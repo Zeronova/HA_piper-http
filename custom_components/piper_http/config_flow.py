@@ -9,8 +9,6 @@ import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.core import callback
 from homeassistant.data_entry_flow import FlowResult
-from homeassistant.helpers.aiohttp_client import async_get_clientsession
-from homeassistant.helpers.selector import selector
 
 from .const import (
     CONF_HOST,
@@ -30,7 +28,6 @@ from .const import (
     DEFAULT_SENTENCE_SILENCE,
     DEFAULT_SPEAKER_ID,
     DOMAIN,
-    ENDPOINT_MODELS,
     FALLBACK_MODELS,
     LOGGER,
 )
@@ -41,46 +38,6 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
         vol.Required(CONF_PORT, default=DEFAULT_PORT): vol.All(int, vol.Range(min=1, max=65535)),
     }
 )
-
-
-async def _fetch_models(hass, host: str, port: int) -> list[dict]:
-    """Fetch available models from the piper-http server.
-
-    Returns a list of model dicts with at least 'file' and 'label' keys.
-    Falls back to FALLBACK_MODELS if the server is unreachable.
-    """
-    url = f"http://{host}:{port}{ENDPOINT_MODELS}"
-    session = async_get_clientsession(hass)
-    try:
-        async with session.get(url, timeout=10) as resp:
-            if resp.status != 200:
-                LOGGER.warning("fetch_models returned HTTP %s – using fallback", resp.status)
-                return list(FALLBACK_MODELS)
-            data = await resp.json()
-
-            on_disk = data.get("on_disk", [])
-            if on_disk:
-                return [
-                    {"file": m["file"], "label": m["file"].replace(".onnx", "")}
-                    for m in on_disk
-                ]
-
-            well_known = data.get("well_known", [])
-            if well_known:
-                return [
-                    {"file": f"{m['name']}.onnx", "label": f"{m['label']}"}
-                    for m in well_known
-                ]
-
-            return list(FALLBACK_MODELS)
-    except Exception as err:
-        LOGGER.warning("Could not fetch models: %s – using fallback", err)
-        return list(FALLBACK_MODELS)
-
-
-def _model_options(models: list[dict]) -> dict[str, str]:
-    """Return a {file: label} dict for vol.In."""
-    return {m["file"]: m.get("label", m["file"]) for m in models}
 
 
 class PiperHTTPConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -96,24 +53,23 @@ class PiperHTTPConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             host = user_input[CONF_HOST]
             port = user_input[CONF_PORT]
 
-            models = await _fetch_models(self.hass, host, port)
-            if not models:
-                errors["base"] = "cannot_connect"
-            else:
-                await self.async_set_unique_id(f"{host}_{port}")
-                self._abort_if_unique_id_configured()
-                return self.async_create_entry(
-                    title=f"Piper HTTP ({host}:{port})",
-                    data=user_input,
-                    options={
-                        CONF_MODEL: models[0]["file"],
-                        CONF_SPEAKER_ID: DEFAULT_SPEAKER_ID,
-                        CONF_LENGTH_SCALE: DEFAULT_LENGTH_SCALE,
-                        CONF_NOISE_SCALE: DEFAULT_NOISE_SCALE,
-                        CONF_NOISE_W: DEFAULT_NOISE_W,
-                        CONF_SENTENCE_SILENCE: DEFAULT_SENTENCE_SILENCE,
-                    },
-                )
+            LOGGER.info("Config flow: host=%s port=%s", host, port)
+            await self.async_set_unique_id(f"{host}_{port}")
+            self._abort_if_unique_id_configured()
+            options = {
+                CONF_MODEL: DEFAULT_MODEL,
+                CONF_SPEAKER_ID: DEFAULT_SPEAKER_ID,
+                CONF_LENGTH_SCALE: DEFAULT_LENGTH_SCALE,
+                CONF_NOISE_SCALE: DEFAULT_NOISE_SCALE,
+                CONF_NOISE_W: DEFAULT_NOISE_W,
+                CONF_SENTENCE_SILENCE: DEFAULT_SENTENCE_SILENCE,
+            }
+            LOGGER.info("Config flow: creating entry with options=%s", options)
+            return self.async_create_entry(
+                title=f"Piper HTTP ({host}:{port})",
+                data=user_input,
+                options=options,
+            )
 
         return self.async_show_form(
             step_id="user",
@@ -127,6 +83,7 @@ class PiperHTTPConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         config_entry: config_entries.ConfigEntry,
     ) -> config_entries.OptionsFlow:
         """Create the options flow."""
+        LOGGER.info("Options flow: created")
         return PiperHTTPOptionsFlow()
 
 
@@ -135,18 +92,30 @@ class PiperHTTPOptionsFlow(config_entries.OptionsFlow):
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         """Manage the options."""
+
+        LOGGER.info("Options flow: async_step_init called")
+        LOGGER.info("Options flow: hass=%s", self.hass is not None)
+        LOGGER.info("Options flow: config_entry=%s", self.config_entry is not None)
+
+        if self.config_entry is not None:
+            LOGGER.info("Options flow: data=%s", self.config_entry.data)
+            LOGGER.info("Options flow: options=%s", self.config_entry.options)
+
         host = self.config_entry.data[CONF_HOST]
         port = self.config_entry.data[CONF_PORT]
+        LOGGER.info("Options flow: host=%s port=%s", host, port)
 
-        LOGGER.debug("Piper HTTP options: host=%s port=%s", host, port)
+        # Build model options from FALLBACK_MODELS (static, no HTTP)
+        models_dict: dict[str, str] = {}
+        LOGGER.info("Options flow: FALLBACK_MODELS has %d entries", len(FALLBACK_MODELS))
+        for m in FALLBACK_MODELS:
+            label = m.get("label", m["file"])
+            LOGGER.info("Options flow: adding model %s = %s", m["file"], label)
+            models_dict[m["file"]] = label
 
-        models = await _fetch_models(self.hass, host, port)
-        models_dict = _model_options(models)
-
-        current_model = self.config_entry.options.get(
-            CONF_MODEL,
-            list(models_dict.keys())[0],
-        )
+        current_model = self.config_entry.options.get(CONF_MODEL, DEFAULT_MODEL)
+        LOGGER.info("Options flow: current_model=%s", current_model)
+        LOGGER.info("Options flow: models_dict keys=%s", list(models_dict.keys()))
 
         schema = vol.Schema(
             {
@@ -174,7 +143,10 @@ class PiperHTTPOptionsFlow(config_entries.OptionsFlow):
             }
         )
 
+        LOGGER.info("Options flow: schema built, about to show form")
+
         if user_input is not None:
+            LOGGER.info("Options flow: user_input=%s", user_input)
             return self.async_create_entry(title="", data=user_input)
 
         return self.async_show_form(
