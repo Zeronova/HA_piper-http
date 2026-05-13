@@ -22,6 +22,7 @@ from .const import (
     CONF_SENTENCE_SILENCE,
     CONF_SPEAKER_ID,
     DEFAULT_LENGTH_SCALE,
+    DEFAULT_MODEL,
     DEFAULT_NOISE_SCALE,
     DEFAULT_NOISE_W,
     DEFAULT_SENTENCE_SILENCE,
@@ -68,11 +69,18 @@ class PiperHTTPProvider(TextToSpeechEntity):
             "model": "Piper TTS Server",
             "sw_version": "0.1.0",
         }
+        self._current_model: str | None = None
 
     def _build_tts_params(self, message: str) -> dict[str, str]:
         """Build query parameters for the TTS request."""
         options = self._config_entry.options
         params: dict[str, str] = {"text": message}
+
+        # Send model — server now switches per request
+        model = options.get(CONF_MODEL, DEFAULT_MODEL)
+        if model:
+            model_name = model.split(".onnx")[0] + ".onnx"
+            params["model"] = model_name
 
         speaker_id = options.get(CONF_SPEAKER_ID, DEFAULT_SPEAKER_ID)
         if speaker_id != DEFAULT_SPEAKER_ID:
@@ -96,6 +104,13 @@ class PiperHTTPProvider(TextToSpeechEntity):
 
         return params
 
+    async def async_added_to_hass(self) -> None:
+        """Load the configured model on the server when HA starts."""
+        await super().async_added_to_hass()
+        desired_model = self._config_entry.options.get(CONF_MODEL, DEFAULT_MODEL)
+        if desired_model:
+            await self._switch_model(desired_model)
+
     async def async_get_tts_audio(
         self,
         message: str,
@@ -104,6 +119,8 @@ class PiperHTTPProvider(TextToSpeechEntity):
     ) -> tuple[str | None, bytes | None]:
         """Load TTS audio from the piper-http server.
 
+        The configured model is sent as a query parameter so the
+        server switches automatically on each request.
         Returns a tuple of (extension, audio_data) or (None, None) on error.
         """
         params = self._build_tts_params(message)
@@ -141,13 +158,27 @@ class PiperHTTPProvider(TextToSpeechEntity):
             await self._switch_model(new_model)
 
     async def _switch_model(self, model: str) -> None:
-        """Switch the active model on the piper-http server."""
+        """Switch the active model (and synthesis params) on the piper-http server."""
         import json
 
         url = f"{self._base_url}{ENDPOINT_VOICE}"
         model_name = model.split(".onnx")[0] + ".onnx"
-        payload = {"model": model_name}
-        _LOGGER.info("Switching Piper model to %s", model_name)
+
+        # Send all configured synthesis params so the server matches
+        options = self._config_entry.options
+        payload: dict[str, Any] = {"model": model_name}
+        if CONF_SPEAKER_ID in options:
+            payload["speaker_id"] = options[CONF_SPEAKER_ID]
+        if CONF_LENGTH_SCALE in options:
+            payload["length_scale"] = options[CONF_LENGTH_SCALE]
+        if CONF_NOISE_SCALE in options:
+            payload["noise_scale"] = options[CONF_NOISE_SCALE]
+        if CONF_NOISE_W in options:
+            payload["noise_w"] = options[CONF_NOISE_W]
+        if CONF_SENTENCE_SILENCE in options:
+            payload["sentence_silence"] = options[CONF_SENTENCE_SILENCE]
+
+        _LOGGER.info("Switching Piper model to %s (params=%s)", model_name, payload)
 
         session = async_get_clientsession(self.hass)
 
@@ -160,6 +191,7 @@ class PiperHTTPProvider(TextToSpeechEntity):
             ) as resp:
                 if resp.status == 200:
                     _LOGGER.info("Switched Piper model to %s", model)
+                    self._current_model = model
                 else:
                     _LOGGER.warning(
                         "Failed to switch model: %s %s",
