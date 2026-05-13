@@ -4,12 +4,12 @@ from __future__ import annotations
 
 from typing import Any
 
-import aiohttp
 import voluptuous as vol
 
 from homeassistant import config_entries
 from homeassistant.core import callback
 from homeassistant.data_entry_flow import FlowResult
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .const import (
     CONF_HOST,
@@ -44,14 +44,17 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
 async def fetch_models(hass, host: str, port: int) -> list[dict]:
     """Fetch available models from the piper-http server."""
     url = f"http://{host}:{port}{ENDPOINT_MODELS}"
+    session = async_get_clientsession(hass)
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url, timeout=5) as resp:
-                if resp.status != 200:
-                    return []
-                data = await resp.json()
-                return data.get("on_disk", [])
-    except (aiohttp.ClientError, TimeoutError, ValueError) as err:
+        async with session.get(url, timeout=10) as resp:
+            if resp.status != 200:
+                LOGGER.warning("fetch_models returned HTTP %s from %s", resp.status, url)
+                return []
+            data = await resp.json()
+            models = data.get("on_disk", [])
+            LOGGER.debug("Fetched %d models from %s", len(models), url)
+            return models
+    except Exception as err:
         LOGGER.warning("Could not fetch models from %s: %s", url, err)
         return []
 
@@ -116,14 +119,23 @@ class PiperHTTPOptionsFlow(config_entries.OptionsFlow):
         host = self._config_entry.data[CONF_HOST]
         port = self._config_entry.data[CONF_PORT]
         models = await fetch_models(self.hass, host, port)
-        model_choices = {m["file"]: m["file"] for m in models}
+
+        if not models:
+            LOGGER.warning(
+                "No models found on piper-http at %s:%s – options cannot proceed",
+                host, port,
+            )
+            model_choices = {}
+            default_model = ""
+        else:
+            model_choices = {m["file"]: m["file"] for m in models}
+            default_model = self._config_entry.options.get(
+                CONF_MODEL, models[0]["file"]
+            )
 
         schema = vol.Schema(
             {
-                vol.Required(
-                    CONF_MODEL,
-                    default=self._config_entry.options.get(CONF_MODEL, models[0]["file"] if models else ""),
-                ): vol.In(model_choices),
+                vol.Required(CONF_MODEL, default=default_model): vol.In(model_choices),
                 vol.Optional(
                     CONF_SPEAKER_ID,
                     default=self._config_entry.options.get(CONF_SPEAKER_ID, DEFAULT_SPEAKER_ID),

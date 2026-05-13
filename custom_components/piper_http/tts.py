@@ -5,11 +5,10 @@ from __future__ import annotations
 from typing import Any
 from urllib.parse import urlencode
 
-import aiohttp
-
 from homeassistant.components.tts import TextToSpeechEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import (
@@ -47,6 +46,8 @@ class PiperHTTPProvider(TextToSpeechEntity):
 
     _attr_name = "Piper HTTP TTS"
     _attr_has_entity_name = True
+    _attr_supported_languages = ["de", "en"]
+    _attr_default_language = "de"
 
     def __init__(self, config_entry: ConfigEntry) -> None:
         """Initialize the Piper HTTP TTS entity."""
@@ -63,16 +64,6 @@ class PiperHTTPProvider(TextToSpeechEntity):
             "model": "Piper TTS Server",
             "sw_version": "0.1.0",
         }
-
-    @property
-    def supported_languages(self) -> list[str]:
-        """Return list of supported languages."""
-        return ["de", "en"]
-
-    @property
-    def default_language(self) -> str:
-        """Return the default language."""
-        return "de"
 
     def _build_tts_params(self, message: str) -> dict[str, str]:
         """Build query parameters for the TTS request."""
@@ -106,33 +97,36 @@ class PiperHTTPProvider(TextToSpeechEntity):
         message: str,
         language: str,
         options: dict[str, Any] | None = None,
-    ) -> TextToSpeechEntity.TtsAudio:
-        """Load TTS audio from the piper-http server."""
+    ) -> tuple[str | None, bytes | None]:
+        """Load TTS audio from the piper-http server.
+
+        Returns a tuple of (extension, audio_data) or (None, None) on error.
+        """
         params = self._build_tts_params(message)
         query = urlencode(params)
         url = f"{self._base_url}{ENDPOINT_TTS}?{query}"
         LOGGER.debug("Fetching TTS audio: %s (text='%s')", url, message[:50])
 
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url, timeout=30) as resp:
-                    if resp.status != 200:
-                        error_text = await resp.text()
-                        LOGGER.error(
-                            "Piper HTTP returned %s: %s", resp.status, error_text
-                        )
-                        return self.TtsAudio(
-                            media_id="", ext="wav", data=b""
-                        )
-                    audio_data = await resp.read()
-                    content_type = resp.headers.get("Content-Type", "audio/wav")
+        session = async_get_clientsession(self.hass)
 
-        except (aiohttp.ClientError, TimeoutError) as err:
+        try:
+            async with session.get(url, timeout=30) as resp:
+                if resp.status != 200:
+                    error_text = await resp.text()
+                    LOGGER.error(
+                        "Piper HTTP returned %s: %s", resp.status, error_text
+                    )
+                    return (None, None)
+
+                audio_data = await resp.read()
+                content_type = resp.headers.get("Content-Type", "audio/wav")
+
+        except Exception as err:
             LOGGER.error("Error fetching TTS audio from %s: %s", url, err)
-            return self.TtsAudio(media_id="", ext="wav", data=b"")
+            return (None, None)
 
         ext = "ogg" if "ogg" in content_type else "wav"
-        return self.TtsAudio(media_id="", ext=ext, data=audio_data)
+        return (ext, audio_data)
 
     async def async_update_options(self, config_entry: ConfigEntry) -> None:
         """Update entity when options change."""
@@ -150,21 +144,23 @@ class PiperHTTPProvider(TextToSpeechEntity):
         model_name = model.split(".onnx")[0] + ".onnx"
         payload = {"model": model_name}
         LOGGER.info("Switching Piper model to %s", model_name)
+
+        session = async_get_clientsession(self.hass)
+
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    url,
-                    data=json.dumps(payload),
-                    headers={"Content-Type": "application/json"},
-                    timeout=10,
-                ) as resp:
-                    if resp.status == 200:
-                        LOGGER.info("Switched Piper model to %s", model)
-                    else:
-                        LOGGER.warning(
-                            "Failed to switch model: %s %s",
-                            resp.status,
-                            await resp.text(),
-                        )
-        except (aiohttp.ClientError, TimeoutError) as err:
+            async with session.post(
+                url,
+                data=json.dumps(payload),
+                headers={"Content-Type": "application/json"},
+                timeout=10,
+            ) as resp:
+                if resp.status == 200:
+                    LOGGER.info("Switched Piper model to %s", model)
+                else:
+                    LOGGER.warning(
+                        "Failed to switch model: %s %s",
+                        resp.status,
+                        await resp.text(),
+                    )
+        except Exception as err:
             LOGGER.error("Error switching model: %s", err)
