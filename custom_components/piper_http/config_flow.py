@@ -137,25 +137,22 @@ class PiperHTTPOptionsFlow(config_entries.OptionsFlow):
     """Handle options for Piper HTTP TTS."""
 
     def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
-        self._config_entry = config_entry
+        super().__init__(config_entry)
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         """Manage the options."""
-        host = self._config_entry.data[CONF_HOST]
-        port = self._config_entry.data[CONF_PORT]
+        host = self.config_entry.data[CONF_HOST]
+        port = self.config_entry.data[CONF_PORT]
 
-        # Try to fetch live models, fall back to FALLBACK_MODELS if server
-        # is unreachable or returns nothing.
-        models = await fetch_models(self.hass, host, port)
+        LOGGER.debug("Piper HTTP options step: host=%s port=%s", host, port)
 
-        model_options = [
-            {"value": m["file"], "label": m.get("label", m["file"])}
-            for m in models
-        ]
+        # Use hardcoded fallback model list (no HTTP fetch).
+        # The user can type any model name via custom_value.
+        model_options: list[str] = [m["file"] for m in FALLBACK_MODELS]
 
-        current_model = self._config_entry.options.get(
+        current_model = self.config_entry.options.get(
             CONF_MODEL,
-            models[0]["file"] if models else DEFAULT_MODEL,
+            FALLBACK_MODELS[0]["file"],
         )
 
         schema = vol.Schema(
@@ -170,31 +167,31 @@ class PiperHTTPOptionsFlow(config_entries.OptionsFlow):
                 }),
                 vol.Optional(
                     CONF_SPEAKER_ID,
-                    default=self._config_entry.options.get(CONF_SPEAKER_ID, DEFAULT_SPEAKER_ID),
+                    default=self.config_entry.options.get(CONF_SPEAKER_ID, DEFAULT_SPEAKER_ID),
                 ): selector({
                     "number": {"min": 0, "max": 10, "step": 1, "mode": "box"}
                 }),
                 vol.Optional(
                     CONF_LENGTH_SCALE,
-                    default=self._config_entry.options.get(CONF_LENGTH_SCALE, DEFAULT_LENGTH_SCALE),
+                    default=self.config_entry.options.get(CONF_LENGTH_SCALE, DEFAULT_LENGTH_SCALE),
                 ): selector({
                     "number": {"min": 0.3, "max": 3.0, "step": 0.05, "mode": "slider"}
                 }),
                 vol.Optional(
                     CONF_NOISE_SCALE,
-                    default=self._config_entry.options.get(CONF_NOISE_SCALE, DEFAULT_NOISE_SCALE),
+                    default=self.config_entry.options.get(CONF_NOISE_SCALE, DEFAULT_NOISE_SCALE),
                 ): selector({
                     "number": {"min": 0.0, "max": 2.0, "step": 0.05, "mode": "slider"}
                 }),
                 vol.Optional(
                     CONF_NOISE_W,
-                    default=self._config_entry.options.get(CONF_NOISE_W, DEFAULT_NOISE_W),
+                    default=self.config_entry.options.get(CONF_NOISE_W, DEFAULT_NOISE_W),
                 ): selector({
                     "number": {"min": 0.0, "max": 2.0, "step": 0.05, "mode": "slider"}
                 }),
                 vol.Optional(
                     CONF_SENTENCE_SILENCE,
-                    default=self._config_entry.options.get(CONF_SENTENCE_SILENCE, DEFAULT_SENTENCE_SILENCE),
+                    default=self.config_entry.options.get(CONF_SENTENCE_SILENCE, DEFAULT_SENTENCE_SILENCE),
                 ): selector({
                     "number": {"min": 0.0, "max": 10.0, "step": 0.1, "mode": "slider"}
                 }),
