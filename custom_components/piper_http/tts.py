@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 from urllib.parse import urlencode
 
@@ -28,8 +29,9 @@ from .const import (
     DOMAIN,
     ENDPOINT_TTS,
     ENDPOINT_VOICE,
-    LOGGER,
 )
+
+_LOGGER = logging.getLogger(__name__)
 
 
 async def async_setup_entry(
@@ -38,6 +40,7 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up Piper HTTP TTS entities."""
+    _LOGGER.warning("TTS async_setup_entry called")
     async_add_entities([PiperHTTPProvider(config_entry)])
 
 
@@ -52,6 +55,7 @@ class PiperHTTPProvider(TextToSpeechEntity):
     def __init__(self, config_entry: ConfigEntry) -> None:
         """Initialize the Piper HTTP TTS entity."""
         super().__init__()
+        _LOGGER.warning("PiperHTTPProvider.__init__")
         self._config_entry = config_entry
         self._host = config_entry.data[CONF_HOST]
         self._port = config_entry.data[CONF_PORT]
@@ -105,7 +109,7 @@ class PiperHTTPProvider(TextToSpeechEntity):
         params = self._build_tts_params(message)
         query = urlencode(params)
         url = f"{self._base_url}{ENDPOINT_TTS}?{query}"
-        LOGGER.debug("Fetching TTS audio: %s (text='%s')", url, message[:50])
+        _LOGGER.debug("Fetching TTS audio: %s (text='%s')", url, message[:50])
 
         session = async_get_clientsession(self.hass)
 
@@ -113,7 +117,7 @@ class PiperHTTPProvider(TextToSpeechEntity):
             async with session.get(url, timeout=30) as resp:
                 if resp.status != 200:
                     error_text = await resp.text()
-                    LOGGER.error(
+                    _LOGGER.error(
                         "Piper HTTP returned %s: %s", resp.status, error_text
                     )
                     return (None, None)
@@ -122,7 +126,7 @@ class PiperHTTPProvider(TextToSpeechEntity):
                 content_type = resp.headers.get("Content-Type", "audio/wav")
 
         except Exception as err:
-            LOGGER.error("Error fetching TTS audio from %s: %s", url, err)
+            _LOGGER.error("Error fetching TTS audio from %s: %s", url, err)
             return (None, None)
 
         ext = "ogg" if "ogg" in content_type else "wav"
@@ -143,7 +147,7 @@ class PiperHTTPProvider(TextToSpeechEntity):
         url = f"{self._base_url}{ENDPOINT_VOICE}"
         model_name = model.split(".onnx")[0] + ".onnx"
         payload = {"model": model_name}
-        LOGGER.info("Switching Piper model to %s", model_name)
+        _LOGGER.info("Switching Piper model to %s", model_name)
 
         session = async_get_clientsession(self.hass)
 
@@ -155,12 +159,12 @@ class PiperHTTPProvider(TextToSpeechEntity):
                 timeout=10,
             ) as resp:
                 if resp.status == 200:
-                    LOGGER.info("Switched Piper model to %s", model)
+                    _LOGGER.info("Switched Piper model to %s", model)
                 else:
-                    LOGGER.warning(
+                    _LOGGER.warning(
                         "Failed to switch model: %s %s",
                         resp.status,
                         await resp.text(),
                     )
         except Exception as err:
-            LOGGER.error("Error switching model: %s", err)
+            _LOGGER.error("Error switching model: %s", err)

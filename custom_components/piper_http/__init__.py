@@ -1,16 +1,21 @@
 """Init for Piper HTTP TTS integration."""
 
+import logging
+
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 
 from .const import DOMAIN
 
+_LOGGER = logging.getLogger(__name__)
+
 PLATFORMS = [Platform.TTS]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Piper HTTP TTS from a config entry."""
+    _LOGGER.warning("async_setup_entry called for entry %s", entry.entry_id)
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = entry.data | entry.options
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
