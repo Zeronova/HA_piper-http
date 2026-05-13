@@ -10,6 +10,7 @@ from homeassistant import config_entries
 from homeassistant.core import callback
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.selector import selector
 
 from .const import (
     CONF_HOST,
@@ -30,6 +31,7 @@ from .const import (
     DEFAULT_SPEAKER_ID,
     DOMAIN,
     ENDPOINT_MODELS,
+    FALLBACK_MODELS,
     LOGGER,
 )
 
@@ -44,37 +46,44 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
 async def fetch_models(hass, host: str, port: int) -> list[dict]:
     """Fetch available models from the piper-http server.
 
-    Returns a list of model dicts with at least a 'file' key.
-    Falls back to well_known voices when on_disk is empty.
+    Returns a list of model dicts with at least 'file' and 'label' keys.
+    Tries on_disk first, then well_known. If the server is unreachable,
+    falls back to the hardcoded FALLBACK_MODELS list.
     """
     url = f"http://{host}:{port}{ENDPOINT_MODELS}"
     session = async_get_clientsession(hass)
-    models: list[dict] = []
     try:
-        async with session.get(url, timeout=15) as resp:
+        async with session.get(url, timeout=10) as resp:
             if resp.status != 200:
-                LOGGER.warning("fetch_models returned HTTP %s from %s", resp.status, url)
-                return []
+                LOGGER.warning("fetch_models returned HTTP %s from %s – using fallback", resp.status, url)
+                return list(FALLBACK_MODELS)
             data = await resp.json()
-            # Prefer on-disk models (already downloaded)
+
             on_disk = data.get("on_disk", [])
             if on_disk:
-                models = on_disk
-            else:
-                # Fall back to well-known Piper voices with .onnx suffix
-                well_known = data.get("well_known", [])
-                models = [
-                    {"file": f"{m['name']}.onnx", "name": m["name"], "label": m["label"]}
+                LOGGER.debug("Using %d on-disk models from %s", len(on_disk), url)
+                return [
+                    {"file": m["file"], "label": m["file"].replace(".onnx", "")}
+                    for m in on_disk
+                ]
+
+            well_known = data.get("well_known", [])
+            if well_known:
+                LOGGER.debug("Falling back to %d well-known models", len(well_known))
+                return [
+                    {
+                        "file": f"{m['name']}.onnx",
+                        "label": f"{m['label']} — {m['language']}",
+                    }
                     for m in well_known
                 ]
-            LOGGER.debug(
-                "Fetched %d models from %s (on_disk=%d, well_known=%d)",
-                len(models), url, len(on_disk), len(data.get("well_known", [])),
-            )
-            return models
+
+            LOGGER.warning("Server returned no models – using fallback")
+            return list(FALLBACK_MODELS)
+
     except Exception as err:
-        LOGGER.warning("Could not fetch models from %s: %s", url, err)
-        return []
+        LOGGER.warning("Could not fetch models from %s: %s – using fallback", url, err)
+        return list(FALLBACK_MODELS)
 
 
 class PiperHTTPConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -134,41 +143,61 @@ class PiperHTTPOptionsFlow(config_entries.OptionsFlow):
         """Manage the options."""
         host = self._config_entry.data[CONF_HOST]
         port = self._config_entry.data[CONF_PORT]
+
+        # Try to fetch live models, fall back to FALLBACK_MODELS if server
+        # is unreachable or returns nothing.
         models = await fetch_models(self.hass, host, port)
 
-        if not models:
-            LOGGER.warning(
-                "No models found on piper-http at %s:%s – abort options",
-                host, port,
-            )
-            return self.async_abort(reason="cannot_connect")
+        model_options = [
+            {"value": m["file"], "label": m.get("label", m["file"])}
+            for m in models
+        ]
 
-        model_choices = {m["file"]: m["file"] for m in models}
-        default_model = self._config_entry.options.get(CONF_MODEL, models[0]["file"])
+        current_model = self._config_entry.options.get(
+            CONF_MODEL,
+            models[0]["file"] if models else DEFAULT_MODEL,
+        )
 
         schema = vol.Schema(
             {
-                vol.Required(CONF_MODEL, default=default_model): vol.In(model_choices),
+                vol.Optional(CONF_MODEL, default=current_model): selector({
+                    "select": {
+                        "options": model_options,
+                        "mode": "dropdown",
+                        "sort": True,
+                        "custom_value": True,
+                    }
+                }),
                 vol.Optional(
                     CONF_SPEAKER_ID,
                     default=self._config_entry.options.get(CONF_SPEAKER_ID, DEFAULT_SPEAKER_ID),
-                ): vol.All(int, vol.Range(min=0, max=10)),
+                ): selector({
+                    "number": {"min": 0, "max": 10, "step": 1, "mode": "box"}
+                }),
                 vol.Optional(
                     CONF_LENGTH_SCALE,
                     default=self._config_entry.options.get(CONF_LENGTH_SCALE, DEFAULT_LENGTH_SCALE),
-                ): vol.All(vol.Coerce(float), vol.Range(min=0.3, max=3.0)),
+                ): selector({
+                    "number": {"min": 0.3, "max": 3.0, "step": 0.05, "mode": "slider"}
+                }),
                 vol.Optional(
                     CONF_NOISE_SCALE,
                     default=self._config_entry.options.get(CONF_NOISE_SCALE, DEFAULT_NOISE_SCALE),
-                ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=2.0)),
+                ): selector({
+                    "number": {"min": 0.0, "max": 2.0, "step": 0.05, "mode": "slider"}
+                }),
                 vol.Optional(
                     CONF_NOISE_W,
                     default=self._config_entry.options.get(CONF_NOISE_W, DEFAULT_NOISE_W),
-                ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=2.0)),
+                ): selector({
+                    "number": {"min": 0.0, "max": 2.0, "step": 0.05, "mode": "slider"}
+                }),
                 vol.Optional(
                     CONF_SENTENCE_SILENCE,
                     default=self._config_entry.options.get(CONF_SENTENCE_SILENCE, DEFAULT_SENTENCE_SILENCE),
-                ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=10.0)),
+                ): selector({
+                    "number": {"min": 0.0, "max": 10.0, "step": 0.1, "mode": "slider"}
+                }),
             }
         )
 

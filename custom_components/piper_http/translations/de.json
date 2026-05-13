@@ -8,7 +8,17 @@
           "host": "Host",
           "port": "Port"
         }
-      },
+      }
+    },
+    "error": {
+      "cannot_connect": "Verbindung zum Piper Server fehlgeschlagen. Prüfe Host und Port."
+    },
+    "abort": {
+      "already_configured": "Dieser Server ist bereits konfiguriert."
+    }
+  },
+  "options": {
+    "step": {
       "init": {
         "title": "Piper HTTP TTS — Optionen",
         "description": "Stimme und Synthese-Parameter konfigurieren.",
@@ -22,12 +32,8 @@
         }
       }
     },
-    "error": {
-      "cannot_connect": "Verbindung zum Piper Server fehlgeschlagen. Prüfe Host und Port."
-    },
     "abort": {
-      "already_configured": "Dieser Server ist bereits konfiguriert.",
-      "cannot_connect": "Keine Modelle auf dem Piper Server gefunden. Prüfe, ob Modelle verfügbar sind."
+      "cannot_connect": "Keine Modelle vom Piper Server erhalten – Fallback-Liste wird verwendet."
     }
   }
 }
