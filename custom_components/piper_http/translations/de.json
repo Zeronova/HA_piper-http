@@ -1,0 +1,32 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Piper HTTP TTS",
+        "description": "Gib die Adresse deines Piper TTS Servers ein.",
+        "data": {
+          "host": "Host",
+          "port": "Port"
+        }
+      },
+      "init": {
+        "title": "Piper HTTP TTS — Optionen",
+        "description": "Stimme und Synthese-Parameter konfigurieren.",
+        "data": {
+          "model": "Modell (Stimme)",
+          "speaker_id": "Sprecher-ID",
+          "length_scale": "Sprechgeschwindigkeit",
+          "noise_scale": "Rauschskala",
+          "noise_w": "Rauschbreite",
+          "sentence_silence": "Satz-Pause (Sekunden)"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Verbindung zum Piper Server fehlgeschlagen. Prüfe Host und Port."
+    },
+    "abort": {
+      "already_configured": "Dieser Server ist bereits konfiguriert."
+    }
+  }
+}
