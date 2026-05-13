@@ -1,0 +1,39 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Piper HTTP TTS",
+        "description": "Enter the address of your Piper TTS server.",
+        "data": {
+          "host": "Host",
+          "port": "Port"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Cannot connect to Piper server. Check host and port."
+    },
+    "abort": {
+      "already_configured": "This server is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Piper HTTP TTS — Options",
+        "description": "Configure voice and synthesis parameters.",
+        "data": {
+          "model": "Model (Voice)",
+          "speaker_id": "Speaker ID",
+          "length_scale": "Speech Speed",
+          "noise_scale": "Noise Scale",
+          "noise_w": "Noise Width",
+          "sentence_silence": "Sentence Silence (seconds)"
+        }
+      }
+    },
+    "abort": {
+      "cannot_connect": "Could not fetch models from Piper server – using fallback list."
+    }
+  }
+}
