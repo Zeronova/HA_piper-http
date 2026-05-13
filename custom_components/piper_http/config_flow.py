@@ -42,17 +42,35 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
 
 
 async def fetch_models(hass, host: str, port: int) -> list[dict]:
-    """Fetch available models from the piper-http server."""
+    """Fetch available models from the piper-http server.
+
+    Returns a list of model dicts with at least a 'file' key.
+    Falls back to well_known voices when on_disk is empty.
+    """
     url = f"http://{host}:{port}{ENDPOINT_MODELS}"
     session = async_get_clientsession(hass)
+    models: list[dict] = []
     try:
-        async with session.get(url, timeout=10) as resp:
+        async with session.get(url, timeout=15) as resp:
             if resp.status != 200:
                 LOGGER.warning("fetch_models returned HTTP %s from %s", resp.status, url)
                 return []
             data = await resp.json()
-            models = data.get("on_disk", [])
-            LOGGER.debug("Fetched %d models from %s", len(models), url)
+            # Prefer on-disk models (already downloaded)
+            on_disk = data.get("on_disk", [])
+            if on_disk:
+                models = on_disk
+            else:
+                # Fall back to well-known Piper voices with .onnx suffix
+                well_known = data.get("well_known", [])
+                models = [
+                    {"file": f"{m['name']}.onnx", "name": m["name"], "label": m["label"]}
+                    for m in well_known
+                ]
+            LOGGER.debug(
+                "Fetched %d models from %s (on_disk=%d, well_known=%d)",
+                len(models), url, len(on_disk), len(data.get("well_known", [])),
+            )
             return models
     except Exception as err:
         LOGGER.warning("Could not fetch models from %s: %s", url, err)
@@ -114,24 +132,19 @@ class PiperHTTPOptionsFlow(config_entries.OptionsFlow):
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         """Manage the options."""
-        errors = {}
-
         host = self._config_entry.data[CONF_HOST]
         port = self._config_entry.data[CONF_PORT]
         models = await fetch_models(self.hass, host, port)
 
         if not models:
             LOGGER.warning(
-                "No models found on piper-http at %s:%s – options cannot proceed",
+                "No models found on piper-http at %s:%s – abort options",
                 host, port,
             )
-            model_choices = {}
-            default_model = ""
-        else:
-            model_choices = {m["file"]: m["file"] for m in models}
-            default_model = self._config_entry.options.get(
-                CONF_MODEL, models[0]["file"]
-            )
+            return self.async_abort(reason="cannot_connect")
+
+        model_choices = {m["file"]: m["file"] for m in models}
+        default_model = self._config_entry.options.get(CONF_MODEL, models[0]["file"])
 
         schema = vol.Schema(
             {
@@ -160,13 +173,10 @@ class PiperHTTPOptionsFlow(config_entries.OptionsFlow):
         )
 
         if user_input is not None:
-            if not models:
-                errors["base"] = "cannot_connect"
-            else:
-                return self.async_create_entry(title="", data=user_input)
+            return self.async_create_entry(title="", data=user_input)
 
         return self.async_show_form(
             step_id="init",
             data_schema=schema,
-            errors=errors,
+            errors={},
         )

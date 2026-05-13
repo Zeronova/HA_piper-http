@@ -26,7 +26,8 @@
       "cannot_connect": "Verbindung zum Piper Server fehlgeschlagen. Prüfe Host und Port."
     },
     "abort": {
-      "already_configured": "Dieser Server ist bereits konfiguriert."
+      "already_configured": "Dieser Server ist bereits konfiguriert.",
+      "cannot_connect": "Keine Modelle auf dem Piper Server gefunden. Prüfe, ob Modelle verfügbar sind."
     }
   }
 }
