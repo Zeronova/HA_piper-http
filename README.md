@@ -20,13 +20,3 @@ Home Assistant TTS-Plattform für lokale Sprachausgabe via [Piper HTTP Server](h
 1. **Integration hinzufügen:** Einstellungen → Geräte & Dienste → Integration hinzufügen → "Piper HTTP"
 2. **Host und Port** des Piper-Servers angeben
 3. **Assistent einrichten:** Einstellungen → Sprachassistenten → Assist → Text-zu-Sprache → "Piper HTTP" auswählen
-
-| Option | Standard | Bereich |
-|--------|----------|---------|
-| Model | erstes Fallback | via FALLBACK_MODELS |
-| Speaker ID | 1 | 0–8 |
-| Length Scale | 1.0 | 0.1–5.0 |
-| Noise Scale | 0.667 | 0.0–2.0 |
-| Noise W | 0.8 | 0.0–2.0 |
-| Sentence Silence | 0.5 | 0.0–10.0 |
-| Denglisch | ein | ein/aus |
