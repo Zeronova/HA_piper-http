@@ -13,6 +13,7 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import (
+    CONF_DENGLISCH,
     CONF_HOST,
     CONF_LENGTH_SCALE,
     CONF_MODEL,
@@ -21,6 +22,7 @@ from .const import (
     CONF_PORT,
     CONF_SENTENCE_SILENCE,
     CONF_SPEAKER_ID,
+    DEFAULT_DENGLISCH,
     DEFAULT_LENGTH_SCALE,
     DEFAULT_MODEL,
     DEFAULT_NOISE_SCALE,
@@ -74,7 +76,11 @@ class PiperHTTPProvider(TextToSpeechEntity):
     def _build_tts_params(self, message: str) -> dict[str, str]:
         """Build query parameters for the TTS request."""
         options = self._config_entry.options
-        params: dict[str, str] = {"text": message, "denglisch": "true"}
+        params: dict[str, str] = {"text": message}
+
+        # Denglisch-Wortersetzungen (optional)
+        if self._config_entry.options.get(CONF_DENGLISCH, DEFAULT_DENGLISCH):
+            params["denglisch"] = "true"
 
         # Send model — server now switches per request
         model = options.get(CONF_MODEL, DEFAULT_MODEL)

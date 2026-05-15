@@ -12,6 +12,7 @@ from homeassistant.core import callback
 from homeassistant.data_entry_flow import FlowResult
 
 from .const import (
+    CONF_DENGLISCH,
     CONF_HOST,
     CONF_LENGTH_SCALE,
     CONF_MODEL,
@@ -20,6 +21,7 @@ from .const import (
     CONF_PORT,
     CONF_SENTENCE_SILENCE,
     CONF_SPEAKER_ID,
+    DEFAULT_DENGLISCH,
     DEFAULT_HOST,
     DEFAULT_LENGTH_SCALE,
     DEFAULT_MODEL,
@@ -59,6 +61,7 @@ class PiperHTTPConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     CONF_NOISE_SCALE: DEFAULT_NOISE_SCALE,
                     CONF_NOISE_W: DEFAULT_NOISE_W,
                     CONF_SENTENCE_SILENCE: DEFAULT_SENTENCE_SILENCE,
+                    CONF_DENGLISCH: DEFAULT_DENGLISCH,
                 },
             )
 
@@ -128,6 +131,10 @@ class PiperHTTPOptionsFlow(config_entries.OptionsFlow):
                     CONF_SENTENCE_SILENCE,
                     default=self.config_entry.options.get(CONF_SENTENCE_SILENCE, DEFAULT_SENTENCE_SILENCE),
                 ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=10.0)),
+                vol.Optional(
+                    CONF_DENGLISCH,
+                    default=self.config_entry.options.get(CONF_DENGLISCH, DEFAULT_DENGLISCH),
+                ): bool,
             }
         )
 
