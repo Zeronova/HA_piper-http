@@ -74,7 +74,7 @@ class PiperHTTPProvider(TextToSpeechEntity):
     def _build_tts_params(self, message: str) -> dict[str, str]:
         """Build query parameters for the TTS request."""
         options = self._config_entry.options
-        params: dict[str, str] = {"text": message}
+        params: dict[str, str] = {"text": message, "denglisch": "true"}
 
         # Send model — server now switches per request
         model = options.get(CONF_MODEL, DEFAULT_MODEL)
